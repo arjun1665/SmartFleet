@@ -1,0 +1,70 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: app
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      POSTGRES_DSN: postgresql+asyncpg://app:app@postgres:5432/app
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672//
+      MODEL_PATH: /app/artifacts/xgb_model.json
+      ENCODER_PATH: /app/artifacts/feature_encoder.joblib
+    volumes:
+      - ./backend/artifacts:/app/artifacts
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+    ports:
+      - "8000:8000"
+
+  worker:
+    build:
+      context: ./backend
+    command: ["celery", "-A", "app.tasks.celery_app.celery_app", "worker", "--loglevel=INFO"]
+    environment:
+      POSTGRES_DSN: postgresql+asyncpg://app:app@postgres:5432/app
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672//
+      MODEL_PATH: /app/artifacts/xgb_model.json
+      ENCODER_PATH: /app/artifacts/feature_encoder.joblib
+    volumes:
+      - ./backend/artifacts:/app/artifacts
+    depends_on:
+      - redis
+      - rabbitmq
+      - backend
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      VITE_API_BASE: http://localhost:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
